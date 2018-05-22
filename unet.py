@@ -174,9 +174,9 @@ class UnetTrainer(object):
                 for batch_idx in range(batches_n):
                     batch_xs, batch_ys = self.sess.run(batch_getter)
                     # TODO: connect
-
+                    print('Batches:', batch_xs.shape, batch_ys.shape)
                     # TODO: batch_xs -> batch_ys !!!!!!!!!!!
-                    vloss = self.train_on_batch(batch_xs, batch_xs)
+                    vloss = self.train_on_batch(batch_xs, batch_ys)
                     logs(summary_writer, vloss, ['loss', 'acc'], batch_idx)
                     losses.append(vloss)
 
