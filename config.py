@@ -1,0 +1,2 @@
+NET_INPUT_SIZE = (572, 572)
+ASSIGNMENT_ROOT_DIR = 'dataset_subset/'
