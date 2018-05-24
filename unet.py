@@ -44,8 +44,13 @@ class UnetTrainer(object):
 
     def train_on_batch(self, batch_xs, batch_ys):
         results = self.sess.run([self.train_step, self.loss, self.accuracy],
-                                feed_dict={self.x: batch_xs, self.y_target: batch_ys})
+                                feed_dict={self.x: batch_xs, self.y_target: batch_ys, self.is_training: True})
         return results[1:]
+
+    def validate_on_batch(self, batch_xs, batch_ys):
+        results = self.sess.run([self.loss, self.accuracy],
+                                feed_dict={self.x: batch_xs, self.y_target: batch_ys, self.is_training: False})
+        return results
 
     def downscale(self, signal):
         return tf.layers.max_pooling2d(signal, pool_size=2, strides=2)
@@ -169,7 +174,7 @@ class UnetTrainer(object):
 
         with tf.Session() as self.sess:
             summary_writer = tf.summary.FileWriter(log_dir_base + 'train/', self.sess.graph)
-            # test_summary_writer = tf.summary.FileWriter(log_dir_base + 'test/', self.sess.graph)
+            valid_summary_writer = tf.summary.FileWriter(log_dir_base + 'valid/', self.sess.graph)
 
             tf.global_variables_initializer().run()  # initialize variables
 
@@ -178,17 +183,30 @@ class UnetTrainer(object):
 
                 for epoch_idx in range(epochs_n):
                     print('Epoch', epoch_idx, 'starts')
+                    train_losses = []
+                    valid_losses = []
                     for batch_idx in range(batches_per_epoch_train):
                         batch_xs, batch_ys = self.sess.run(train_batch_getter)
                         # TODO: connect ^ v ^ v ^
                         vloss = self.train_on_batch(batch_xs, batch_ys)
-                        logs(summary_writer, vloss, ['loss', 'acc'], batch_idx)
-                        losses.append(vloss)
+                        train_losses.append(vloss)
 
                         print('    Batch', batch_idx, vloss)
 
-                    # for batch_idx in range(batches_per_epoch_valid):
-                    #     batch_xs, batch_ys = self.sess.run(valid_batch_getter)
+                    for batch_idx in range(batches_per_epoch_valid):
+                        batch_xs, batch_ys = self.sess.run(valid_batch_getter)
+                        vloss = self.validate_on_batch(batch_xs, batch_ys)
+                        valid_losses.append(vloss)
+                        print('    [VALID] Batch', batch_idx, vloss)
+
+                    print('Epoch', epoch_idx, 'ended')
+                    epoch_train_stats = np.mean(np.asarray(train_losses), axis=1)
+                    epoch_valid_stats = np.mean(np.asarray(train_losses), axis=1)
+
+                    print('Epoch training:', epoch_train_stats)
+                    print('Epoch validation:', epoch_valid_stats)
+                    logs(summary_writer, epoch_train_stats, ['loss', 'acc'], epoch_idx)
+                    logs(valid_summary_writer, epoch_valid_stats, ['loss', 'acc'], epoch_idx)
 
                     # if batch_idx % 100 == 0:
                     #     print('Batch {batch_idx}: mean_loss {mean_loss}'.format(
