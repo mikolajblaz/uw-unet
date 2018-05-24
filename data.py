@@ -1,9 +1,10 @@
+import math
 import os
 import numpy as np
 import tensorflow as tf
 
 
-from config import NET_INPUT_SIZE, ASSIGNMENT_ROOT_DIR
+from config import NET_INPUT_SIZE, ASSIGNMENT_ROOT_DIR, BATCH_SIZE
 
 # Files handling helpers
 def read_image(filename):
@@ -18,14 +19,10 @@ def read_label(filename):
     image_resized = tf.image.resize_images(image_decoded, NET_INPUT_SIZE, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
     return image_resized[:, :, 0]
 
-# def read_both(img_lbl):
-#     img = read_image(img_lbl[0])
-#     lbl = read_label(img_lbl[1])
-#     return img, lbl
-
-count = 0
 def read_both(img_lbl):
-    return img_lbl
+    img = read_image(img_lbl[0])
+    lbl = read_label(img_lbl[1])
+    return img, lbl
 
 def basename2img_lbl(basename):
     img_filename = os.path.abspath(TRAIN_IMGS_DIR + basename + '.jpg')
@@ -45,19 +42,20 @@ def img_lbl_filenames(img_lbl_dir):
     return img_lbl_filenames
 
 def construct_dataset_train(img_lbl_filenames):
+    num_samples = len(img_lbl_filenames)
     dataset = tf.data.Dataset.from_tensor_slices(img_lbl_filenames)
     dataset = dataset.map(read_both)
-    # dataset = dataset.shuffle(buffer_size=TODO)
-    # dataset = dataset.repeat(5)
-    dataset = dataset.batch(3)
-    dataset = dataset.repeat(5)
+    dataset = dataset.shuffle(buffer_size=num_samples)
+    dataset = dataset.repeat()
+    dataset = dataset.batch(3)      # overlapping epochs, but that's ok
     dataset = dataset.prefetch(1)
     return dataset
 
 def construct_dataset_valid(img_lbl_filenames):
     dataset = tf.data.Dataset.from_tensor_slices(img_lbl_filenames)
     dataset = dataset.map(read_both)
-    dataset = dataset.batch(3)
+    dataset = dataset.repeat()
+    dataset = dataset.batch(3)      # overlapping epochs, but that's ok
     dataset = dataset.prefetch(1)
     return dataset
 
@@ -71,10 +69,14 @@ def full_pipeline(img_lbl_dir=ASSIGNMENT_ROOT_DIR + 'training/'):
     img_lbls = img_lbl_filenames(img_lbl_dir)
     img_lbls_train, img_lbls_valid = train_valid_split(img_lbls)
 
-    img_lbls_train = list(range(10))
-    img_lbls_valid = list(range(10, 20))
+    # img_lbls_train = list(range(10))
+    # img_lbls_valid = list(range(10, 30))
 
-    return construct_dataset_train(img_lbls_train), construct_dataset_valid(img_lbls_valid)
+    batches_per_epoch_train = math.ceil(len(img_lbls_train) / BATCH_SIZE)
+    batches_per_epoch_valid = math.ceil(len(img_lbls_valid) / BATCH_SIZE)
+
+    return construct_dataset_train(img_lbls_train), construct_dataset_valid(img_lbls_valid), \
+           batches_per_epoch_train, batches_per_epoch_valid
 
 class Dataset:
     def __init__(self, assignment_root_dir=ASSIGNMENT_ROOT_DIR):

@@ -85,6 +85,7 @@ class UnetTrainer(object):
     def create_model(self):
         self.x = tf.placeholder(tf.float32, [None, NET_INPUT_SIZE[0], NET_INPUT_SIZE[1], 1], name='x')
         self.y_target = tf.placeholder(tf.int64, [None, NET_INPUT_SIZE[0], NET_INPUT_SIZE[1]], name='y_target')
+        self.is_training = tf.placeholder(tf.bool, name='is_training')
 
         signal = self.x
         print_shape = lambda: print('shape', signal.get_shape())
@@ -135,7 +136,10 @@ class UnetTrainer(object):
         else:
             optimizer = tf.train.AdamOptimizer(self.learning_rate)
 
-        self.train_step = optimizer.minimize(self.loss)
+        # Include batch norm updates
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        with tf.control_dependencies(update_ops):
+            self.train_step = optimizer.minimize(self.loss)
 
         print('list of variables', list(map(lambda x: x.name, tf.global_variables())))
 
@@ -152,16 +156,16 @@ class UnetTrainer(object):
         with open(filename, 'w') as f:
             f.write(str(params) + '\n')
 
-    def train(self, batches_n=10000, mb_size=128, dir_base='out', save_path=None):
+    def train(self, epochs_n=100, dir_base='out', save_path=None):
         self.create_model()
 
         log_dir_base = dir_base + '/unet' + get_time() + '/'
         os.makedirs(os.path.dirname(log_dir_base), exist_ok=True)
         self.store_parameters(log_dir_base + 'params')
 
-        dataset = full_pipeline()
-        iterator = dataset.make_one_shot_iterator()
-        batch_getter = iterator.get_next()
+        train_dataset, valid_dataset, batches_per_epoch_train, batches_per_epoch_valid = full_pipeline()
+        train_batch_getter = train_dataset.make_one_shot_iterator().get_next()
+        valid_batch_getter = valid_dataset.make_one_shot_iterator().get_next()
 
         with tf.Session() as self.sess:
             summary_writer = tf.summary.FileWriter(log_dir_base + 'train/', self.sess.graph)
@@ -171,15 +175,20 @@ class UnetTrainer(object):
 
             losses = []
             try:
-                for batch_idx in range(batches_n):
-                    batch_xs, batch_ys = self.sess.run(batch_getter)
-                    # TODO: connect
-                    print('Batches:', batch_xs.shape, batch_ys.shape)
-                    vloss = self.train_on_batch(batch_xs, batch_ys)
-                    logs(summary_writer, vloss, ['loss', 'acc'], batch_idx)
-                    losses.append(vloss)
 
-                    print(vloss)
+                for epoch_idx in range(epochs_n):
+                    print('Epoch', epoch_idx, 'starts')
+                    for batch_idx in range(batches_per_epoch_train):
+                        batch_xs, batch_ys = self.sess.run(train_batch_getter)
+                        # TODO: connect ^ v ^ v ^
+                        vloss = self.train_on_batch(batch_xs, batch_ys)
+                        logs(summary_writer, vloss, ['loss', 'acc'], batch_idx)
+                        losses.append(vloss)
+
+                        print('    Batch', batch_idx, vloss)
+
+                    # for batch_idx in range(batches_per_epoch_valid):
+                    #     batch_xs, batch_ys = self.sess.run(valid_batch_getter)
 
                     # if batch_idx % 100 == 0:
                     #     print('Batch {batch_idx}: mean_loss {mean_loss}'.format(
