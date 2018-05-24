@@ -26,7 +26,7 @@ def logs(writer, values, names, step):
 
 class UnetTrainer(object):
     def __init__(self, conv_layers=None, conv_kernel_sizes=None, conv_batch_norms=None,
-                 learning_rate=0.01, optimizer='momentum'):
+                 learning_rate=0.01, optimizer='adam'):
         # if conv_layers is None:
         #     conv_layers = [16, 32]
         # if conv_kernel_sizes is None:
@@ -84,12 +84,12 @@ class UnetTrainer(object):
 
     def create_model(self):
         self.x = tf.placeholder(tf.float32, [None, NET_INPUT_SIZE[0], NET_INPUT_SIZE[1], 1], name='x')
-        self.y_target = tf.placeholder(tf.float32, [None, NET_INPUT_SIZE[0], NET_INPUT_SIZE[1], 65], name='y_target')
+        self.y_target = tf.placeholder(tf.int64, [None, NET_INPUT_SIZE[0], NET_INPUT_SIZE[1]], name='y_target')
 
         signal = self.x
         print_shape = lambda: print('shape', signal.get_shape())
 
-        num_filters = 65
+        num_filters = 66
         kernel_size = 3
 
         layers_stack = []
@@ -124,11 +124,11 @@ class UnetTrainer(object):
         print_shape()
 
         # Output
-        signal = self.conv_1x1(signal, 65)
+        signal = self.conv_1x1(signal, 66)
         print_shape()
 
-        self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=signal, labels=self.y_target))
-        self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(self.y_target, axis=-1), tf.argmax(signal, axis=-1)), tf.float32))
+        self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=signal, labels=self.y_target))
+        self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.y_target, tf.argmax(signal, axis=-1)), tf.float32))
 
         if self.optimizer == 'momentum':
             optimizer = tf.train.MomentumOptimizer(self.learning_rate, momentum=0.9)
@@ -175,12 +175,11 @@ class UnetTrainer(object):
                     batch_xs, batch_ys = self.sess.run(batch_getter)
                     # TODO: connect
                     print('Batches:', batch_xs.shape, batch_ys.shape)
-                    # TODO: batch_xs -> batch_ys !!!!!!!!!!!
                     vloss = self.train_on_batch(batch_xs, batch_ys)
                     logs(summary_writer, vloss, ['loss', 'acc'], batch_idx)
                     losses.append(vloss)
 
-                    print(losses)
+                    print(vloss)
 
                     # if batch_idx % 100 == 0:
                     #     print('Batch {batch_idx}: mean_loss {mean_loss}'.format(
