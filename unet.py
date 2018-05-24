@@ -146,7 +146,7 @@ class UnetTrainer(object):
         with tf.control_dependencies(update_ops):
             self.train_step = optimizer.minimize(self.loss)
 
-        print('list of variables', list(map(lambda x: x.name, tf.global_variables())))
+        print('list of variables', list(map(lambda x: x.name, tf.global_variables())), flush=True)
 
     def store_parameters(self, filename):
         params = [
@@ -178,11 +178,11 @@ class UnetTrainer(object):
 
             tf.global_variables_initializer().run()  # initialize variables
 
-            losses = []
             try:
-
+                start_time = new_time = time.time()
                 for epoch_idx in range(epochs_n):
-                    print('Epoch', epoch_idx, 'starts')
+                    last_time = new_time
+                    print('Epoch', epoch_idx, 'starts', flush=True)
                     train_losses = []
                     valid_losses = []
                     for batch_idx in range(batches_per_epoch_train):
@@ -190,42 +190,31 @@ class UnetTrainer(object):
                         # TODO: connect ^ v ^ v ^
                         vloss = self.train_on_batch(batch_xs, batch_ys)
                         train_losses.append(vloss)
-
-                        print('    Batch', batch_idx, vloss)
+                        if batch_idx % 10 == 0:
+                            print('    Batch {}/{}: {}'.format(batch_idx, batches_per_epoch_train, np.mean(train_losses, axis=0)), flush=True)
 
                     for batch_idx in range(batches_per_epoch_valid):
                         batch_xs, batch_ys = self.sess.run(valid_batch_getter)
                         vloss = self.validate_on_batch(batch_xs, batch_ys)
                         valid_losses.append(vloss)
-                        print('    [VALID] Batch', batch_idx, vloss)
+                        if batch_idx % 10 == 0:
+                            print('    [VALID] Batch {}/{}: {}'.format(batch_idx, batches_per_epoch_valid, np.mean(valid_losses, axis=0)), flush=True)
 
-                    print('Epoch', epoch_idx, 'ended')
-                    epoch_train_stats = np.mean(np.asarray(train_losses), axis=1)
-                    epoch_valid_stats = np.mean(np.asarray(train_losses), axis=1)
+                    new_time = time.time()
+                    print('Epoch', epoch_idx, 'ended after', new_time - last_time, 'seconds', flush=True)
+                    epoch_train_stats = np.mean(train_losses, axis=0)
+                    epoch_valid_stats = np.mean(valid_losses, axis=0)
 
                     print('Epoch training:', epoch_train_stats)
                     print('Epoch validation:', epoch_valid_stats)
                     logs(summary_writer, epoch_train_stats, ['loss', 'acc'], epoch_idx)
                     logs(valid_summary_writer, epoch_valid_stats, ['loss', 'acc'], epoch_idx)
 
-                    # if batch_idx % 100 == 0:
-                    #     print('Batch {batch_idx}: mean_loss {mean_loss}'.format(
-                    #         batch_idx=batch_idx, mean_loss=np.mean(losses[-200:], axis=0))
-                    #     )
-                    #     test_results = self.sess.run([self.loss, self.accuracy],
-                    #                                         feed_dict={self.x: mnist.test.images,
-                    #                                                    self.y_target: mnist.test.labels})
-                    #     print('Test results', test_results)
-                    #     logs(test_summary_writer, test_results, ['loss', 'acc'], batch_idx)
-
-
             except KeyboardInterrupt:
                 print('Stopping training!')
-                pass
 
-            # # Test trained model
-            # print('Test results', self.sess.run([self.loss, self.accuracy], feed_dict={self.x: mnist.test.images,
-            #                                     self.y_target: mnist.test.labels}))
+            training_time = time.time() - start_time
+            print('Training ended after', training_time, 'seconds')
 
             if save_path is not None:
                 self.store(save_path)

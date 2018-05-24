@@ -1,4 +1,4 @@
 from unet import UnetTrainer
 
 trainer = UnetTrainer()
-trainer.train(1)
+trainer.train(10)
