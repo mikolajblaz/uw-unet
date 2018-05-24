@@ -5,6 +5,7 @@ import os
 import tensorflow as tf
 import time
 
+import config
 from config import NET_INPUT_SIZE
 from data import full_pipeline
 
@@ -57,13 +58,15 @@ class UnetTrainer(object):
 
     def upscale(self, signal, kernel_size=3):
         num_filters = signal.get_shape()[-1] // 2
-        return tf.layers.conv2d_transpose(
+        signal = tf.layers.conv2d_transpose(
             inputs=signal,
             filters=num_filters,
             strides=2,
             kernel_size=kernel_size,
             padding='SAME'
         )
+        signal = tf.layers.batch_normalization(signal, training=self.is_training)
+        return tf.nn.relu(signal)
 
     def conv_bn_relu(self, signal, num_filters, kernel_size=3):
         signal = tf.layers.conv2d(
@@ -72,9 +75,7 @@ class UnetTrainer(object):
             kernel_size=kernel_size,
             padding='SAME'
         )
-        # TODO: batch norm
-        # if use_batch_norm:
-        #     signal = self.apply_batch_normalization(signal)
+        signal = tf.layers.batch_normalization(signal, training=self.is_training)
         return tf.nn.relu(signal)
 
     def conv_1x1(self, signal, num_filters):
@@ -84,7 +85,6 @@ class UnetTrainer(object):
             kernel_size=1,
             padding='SAME'
         )
-        # TODO: batch norm?
         return tf.nn.relu(signal)
 
     def create_model(self):
@@ -102,32 +102,40 @@ class UnetTrainer(object):
         push = lambda: layers_stack.append(signal)
         pop = lambda: layers_stack.pop()
 
+        self.filters_nums = filters_nums = [64, 128, 256, 512, 1024]
+        last_level = filters_nums[-1]
+        filters_nums = filters_nums[:-1]
+
         # for idx, (num_filters, kernel_size, use_batch_norm) \
         #         in enumerate(zip(self.conv_layers, self.conv_kernel_sizes, self.conv_batch_norms)):
 
         # Conv layers
         print('Going down')
         print_shape()
-        signal = self.conv_bn_relu(signal, 64)
-        signal = self.conv_bn_relu(signal, 64)
-        print_shape()
-        push()
-        signal = self.downscale(signal)
-        print_shape()
-        signal = self.conv_bn_relu(signal, 128)
-        signal = self.conv_bn_relu(signal, 128)
+        for num_filters in filters_nums:
+            signal = self.conv_bn_relu(signal, num_filters)
+            signal = self.conv_bn_relu(signal, num_filters)
+            print_shape()
+            push()
+            signal = self.downscale(signal)
+            print_shape()
+
+
+        signal = self.conv_bn_relu(signal, last_level)
+        signal = self.conv_bn_relu(signal, last_level)
 
         print('Going up')
         print_shape()
-        signal = self.upscale(signal)
-        high_res_layer = pop()
-        print('Upscaled layer shape:', signal.get_shape())
-        print('Previous layer shape:', high_res_layer.get_shape())
-        signal = tf.concat([high_res_layer, signal], axis=-1)
-        print_shape()
-        signal = self.conv_bn_relu(signal, 64)
-        signal = self.conv_bn_relu(signal, 64)
-        print_shape()
+        for num_filters in filters_nums[::-1]:
+            signal = self.upscale(signal)
+            high_res_layer = pop()
+            print('Upscaled layer shape:', signal.get_shape())
+            print('Previous layer shape:', high_res_layer.get_shape())
+            signal = tf.concat([high_res_layer, signal], axis=-1)
+            print_shape()
+            signal = self.conv_bn_relu(signal, num_filters)
+            signal = self.conv_bn_relu(signal, num_filters)
+            print_shape()
 
         # Output
         signal = self.conv_1x1(signal, 66)
@@ -150,13 +158,11 @@ class UnetTrainer(object):
 
     def store_parameters(self, filename):
         params = [
-            # self.conv_layers,
-            # self.fc_layers,
-            # self.conv_kernel_sizes,
-            # self.conv_batch_norms,
-            # self.fc_batch_norms,
             self.learning_rate,
-            self.optimizer
+            self.optimizer,
+            self.filters_nums,
+            config.NET_INPUT_SIZE,
+            config.BATCH_SIZE
         ]
         with open(filename, 'w') as f:
             f.write(str(params) + '\n')
@@ -190,23 +196,24 @@ class UnetTrainer(object):
                         # TODO: connect ^ v ^ v ^
                         vloss = self.train_on_batch(batch_xs, batch_ys)
                         train_losses.append(vloss)
-                        if batch_idx % 10 == 0:
+                        if batch_idx % 50 == 0:
                             print('    Batch {}/{}: {}'.format(batch_idx, batches_per_epoch_train, np.mean(train_losses, axis=0)), flush=True)
 
                     for batch_idx in range(batches_per_epoch_valid):
                         batch_xs, batch_ys = self.sess.run(valid_batch_getter)
                         vloss = self.validate_on_batch(batch_xs, batch_ys)
                         valid_losses.append(vloss)
-                        if batch_idx % 10 == 0:
+                        if batch_idx % 50 == 0:
                             print('    [VALID] Batch {}/{}: {}'.format(batch_idx, batches_per_epoch_valid, np.mean(valid_losses, axis=0)), flush=True)
 
                     new_time = time.time()
-                    print('Epoch', epoch_idx, 'ended after', new_time - last_time, 'seconds', flush=True)
+                    print('Epoch', epoch_idx, 'ended after', int(new_time - last_time), 'seconds', flush=True)
                     epoch_train_stats = np.mean(train_losses, axis=0)
                     epoch_valid_stats = np.mean(valid_losses, axis=0)
 
                     print('Epoch training:', epoch_train_stats)
                     print('Epoch validation:', epoch_valid_stats)
+                    print()
                     logs(summary_writer, epoch_train_stats, ['loss', 'acc'], epoch_idx)
                     logs(valid_summary_writer, epoch_valid_stats, ['loss', 'acc'], epoch_idx)
 
@@ -214,7 +221,7 @@ class UnetTrainer(object):
                 print('Stopping training!')
 
             training_time = time.time() - start_time
-            print('Training ended after', training_time, 'seconds')
+            print('Training ended after', int(training_time), 'seconds')
 
             if save_path is not None:
                 self.store(save_path)
