@@ -26,22 +26,12 @@ def logs(writer, values, names, step):
 
 
 class UnetTrainer(object):
-    def __init__(self, conv_layers=None, conv_kernel_sizes=None, conv_batch_norms=None,
-                 learning_rate=0.01, optimizer='adam'):
-        # if conv_layers is None:
-        #     conv_layers = [16, 32]
-        # if conv_kernel_sizes is None:
-        #     conv_kernel_sizes = [3 for _ in conv_layers]
-        #
-        # assert len(conv_layers) == len(conv_batch_norms)
-        #
+    def __init__(self, filters_nums=None, learning_rate=0.01, optimizer='adam'):
         self.learning_rate = learning_rate
-        # self.conv_layers = conv_layers
-        # self.fc_layers = fc_layers
-        # self.conv_kernel_sizes = conv_kernel_sizes
-        # self.conv_batch_norms = conv_batch_norms
-        # self.fc_batch_norms = fc_batch_norms
         self.optimizer = optimizer
+        if filters_nums is None:
+            filters_nums = [64, 128, 256, 512]
+        self.filters_nums = filters_nums
 
     def train_on_batch(self, batch_xs, batch_ys):
         results = self.sess.run([self.train_step, self.loss, self.accuracy],
@@ -102,12 +92,8 @@ class UnetTrainer(object):
         push = lambda: layers_stack.append(signal)
         pop = lambda: layers_stack.pop()
 
-        self.filters_nums = filters_nums = [64, 128, 256, 512, 1024]
-        last_level = filters_nums[-1]
-        filters_nums = filters_nums[:-1]
-
-        # for idx, (num_filters, kernel_size, use_batch_norm) \
-        #         in enumerate(zip(self.conv_layers, self.conv_kernel_sizes, self.conv_batch_norms)):
+        last_level = self.filters_nums[-1]
+        filters_nums = self.filters_nums[:-1]
 
         # Conv layers
         print('Going down')
@@ -119,7 +105,6 @@ class UnetTrainer(object):
             push()
             signal = self.downscale(signal)
             print_shape()
-
 
         signal = self.conv_bn_relu(signal, last_level)
         signal = self.conv_bn_relu(signal, last_level)
