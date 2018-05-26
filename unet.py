@@ -152,7 +152,7 @@ class UnetTrainer(object):
         with open(filename, 'w') as f:
             f.write(str(params) + '\n')
 
-    def train(self, epochs_n=100, dir_base='out', save_path=None):
+    def train(self, epochs_n=100, dir_base='out', save_path='model/model.ckpt'):
         self.create_model()
 
         log_dir_base = dir_base + '/unet' + get_time() + '/'
@@ -202,6 +202,10 @@ class UnetTrainer(object):
                     logs(summary_writer, epoch_train_stats, ['loss', 'acc'], epoch_idx)
                     logs(valid_summary_writer, epoch_valid_stats, ['loss', 'acc'], epoch_idx)
 
+                    if epoch_idx % 10 == 0:
+                        if save_path is not None:
+                            self.store(log_dir_base + 'model/epoch_{}.ckpt'.format(epoch_idx))
+
             except KeyboardInterrupt:
                 print('Stopping training!')
 
@@ -209,7 +213,7 @@ class UnetTrainer(object):
             print('Training ended after', int(training_time), 'seconds')
 
             if save_path is not None:
-                self.store(save_path)
+                self.store(log_dir_base + save_path)
 
     def store(self, path='./model/model.ckpt'):
         """ Must be called within a started session. """
