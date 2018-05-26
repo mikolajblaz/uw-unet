@@ -30,7 +30,7 @@ class UnetTrainer(object):
         self.learning_rate = learning_rate
         self.optimizer = optimizer
         if filters_nums is None:
-            filters_nums = [64, 128, 256, 512]
+            filters_nums = [64, 128, 256, 512, 1024]
         self.filters_nums = filters_nums
 
     def train_on_batch(self, batch_xs, batch_ys):
