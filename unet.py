@@ -38,9 +38,9 @@ class UnetTrainer(object):
         return results[1:]
 
     def validate_on_batch(self, batch_xs, batch_ys):
-        results = self.sess.run([self.valid_loss, self.valid_accuracy],
+        results = self.sess.run([self.valid_loss, self.valid_accuracy, self.images_summ],
                                 feed_dict={self.x: batch_xs, self.y_target: batch_ys, self.is_training: False})
-        return results
+        return results[:2], results[2]
 
     def downscale(self, signal):
         return tf.layers.max_pooling2d(signal, pool_size=2, strides=2)
@@ -161,7 +161,28 @@ class UnetTrainer(object):
         # shape: (4, x, x)
 
         self.valid_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=valid_mean_output, labels=labels))
-        self.valid_accuracy = tf.reduce_mean(tf.cast(tf.equal(labels, tf.argmax(valid_mean_output, axis=-1)), tf.float32))
+        self.valid_predictions = tf.argmax(valid_mean_output, axis=-1)
+        # shape: (4, x, x)
+        self.valid_accuracy = tf.reduce_mean(tf.cast(tf.equal(labels, self.valid_predictions), tf.float32))
+
+        # Image summaries
+        input_shape = tf.shape(self.x)
+        # shape: (8, x, x, 1)
+        input_unbatched =  tf.reshape(self.x, (-1, config.AUGMENT_FACTOR, input_shape[1], input_shape[2]))
+        # shape: (4, 2, x, x)
+        input = input_unbatched[:, 0]
+        # shape: (4, x, x)
+        concat_images = tf.concat([
+            tf.cast(input * 255, tf.int64),
+            labels,
+            self.valid_predictions
+        ], axis=-1)
+        # shape: (4, x, 3*x)
+        print('Concat images shape:', concat_images.get_shape())
+        shape = tf.shape(concat_images)
+        concat_images = tf.reshape(concat_images, (shape[0], shape[1], shape[2], 1))
+        print('Concat images shape 4D:', concat_images.get_shape())
+        self.images_summ = tf.summary.image('img', tf.cast(concat_images, tf.uint8), max_outputs=4)
 
         print('list of variables', list(map(lambda x: x.name, tf.global_variables())), flush=True)
 
@@ -210,11 +231,13 @@ class UnetTrainer(object):
 
                     for batch_idx in range(batches_per_epoch_valid):
                         batch_xs, batch_ys = self.sess.run(valid_batch_getter)
-                        vloss = self.validate_on_batch(batch_xs, batch_ys)
+                        vloss, images_summ_ = self.validate_on_batch(batch_xs, batch_ys)
                         valid_losses.append(vloss)
                         if batch_idx % 50 == 0:
                             print('    [VALID] Batch {}/{}: {}'.format(batch_idx, batches_per_epoch_valid, np.mean(valid_losses, axis=0)), flush=True)
                             logs(valid_summary_writer, np.mean(valid_losses, axis=0), ['loss', 'acc'], epoch_idx + batch_idx / batches_per_epoch_valid)
+                            valid_summary_writer.add_summary(images_summ_, epoch_idx + batch_idx / batches_per_epoch_valid)
+                            valid_summary_writer.flush()
 
                     new_time = time.time()
                     print('Epoch', epoch_idx, 'ended after', int(new_time - last_time), 'seconds', flush=True)
@@ -250,3 +273,9 @@ class UnetTrainer(object):
         saver = tf.train.Saver()
         saver.restore(self.sess, path)
         print("Model restored.")
+
+    # def visualize_predictions(self, model_path):
+    #     with tf.Session() as self.sess:
+    #         self.restore(model_path)
+    #
+    #         summary_writer = tf.summary.FileWriter('vis/', self.sess.graph)
