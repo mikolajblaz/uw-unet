@@ -1,5 +1,4 @@
 import math
-import matplotlib.pyplot as plt
 import numpy as np
 import os
 import tensorflow as tf
@@ -39,7 +38,7 @@ class UnetTrainer(object):
         return results[1:]
 
     def validate_on_batch(self, batch_xs, batch_ys):
-        results = self.sess.run([self.loss, self.accuracy],
+        results = self.sess.run([self.valid_loss, self.valid_accuracy],
                                 feed_dict={self.x: batch_xs, self.y_target: batch_ys, self.is_training: False})
         return results
 
@@ -84,9 +83,6 @@ class UnetTrainer(object):
 
         signal = self.x
         print_shape = lambda: print('shape', signal.get_shape())
-
-        num_filters = 66
-        kernel_size = 3
 
         layers_stack = []
         push = lambda: layers_stack.append(signal)
@@ -139,6 +135,34 @@ class UnetTrainer(object):
         with tf.control_dependencies(update_ops):
             self.train_step = optimizer.minimize(self.loss)
 
+        # Validation
+        def unbatch(signal):
+            output_shape = tf.shape(signal)
+            # shape: (8, x, x, 66)
+            signal = tf.reshape(signal, (-1, config.AUGMENT_FACTOR, output_shape[1], output_shape[2], output_shape[3]))
+            # shape: (4, 2, x, x, 66)
+            return signal
+
+        output_shape = tf.shape(signal)
+        valid_grouped_output = tf.reshape(signal, (-1, config.AUGMENT_FACTOR, output_shape[1], output_shape[2], output_shape[3]))
+        print('Validation shape:', valid_grouped_output.get_shape())
+        normal = valid_grouped_output[:, 0]
+        unflipped = tf.reverse(valid_grouped_output[:, 1], axis=[-2])
+        unaugmented = tf.stack([normal, unflipped])
+        # shape: (2, 4, x, x, 66)
+        valid_mean_output = tf.reduce_mean(unaugmented, axis=0)
+        # shape: (4, x, x, 66)
+
+        labels_shape = tf.shape(self.y_target)
+        # shape: (8, x, x)
+        labels_unbatched =  tf.reshape(self.y_target, (-1, config.AUGMENT_FACTOR, labels_shape[1], labels_shape[2]))
+        # shape: (4, 2, x, x)
+        labels = labels_unbatched[:, 0]
+        # shape: (4, x, x)
+
+        self.valid_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=valid_mean_output, labels=labels))
+        self.valid_accuracy = tf.reduce_mean(tf.cast(tf.equal(labels, tf.argmax(valid_mean_output, axis=-1)), tf.float32))
+
         print('list of variables', list(map(lambda x: x.name, tf.global_variables())), flush=True)
 
     def store_parameters(self, filename):
@@ -178,11 +202,11 @@ class UnetTrainer(object):
                     valid_losses = []
                     for batch_idx in range(batches_per_epoch_train):
                         batch_xs, batch_ys = self.sess.run(train_batch_getter)
-                        # TODO: connect ^ v ^ v ^
                         vloss = self.train_on_batch(batch_xs, batch_ys)
                         train_losses.append(vloss)
                         if batch_idx % 50 == 0:
                             print('    Batch {}/{}: {}'.format(batch_idx, batches_per_epoch_train, np.mean(train_losses, axis=0)), flush=True)
+                            logs(summary_writer, np.mean(train_losses, axis=0), ['loss', 'acc'], epoch_idx + batch_idx / batches_per_epoch_train)
 
                     for batch_idx in range(batches_per_epoch_valid):
                         batch_xs, batch_ys = self.sess.run(valid_batch_getter)
@@ -190,6 +214,7 @@ class UnetTrainer(object):
                         valid_losses.append(vloss)
                         if batch_idx % 50 == 0:
                             print('    [VALID] Batch {}/{}: {}'.format(batch_idx, batches_per_epoch_valid, np.mean(valid_losses, axis=0)), flush=True)
+                            logs(valid_summary_writer, np.mean(valid_losses, axis=0), ['loss', 'acc'], epoch_idx + batch_idx / batches_per_epoch_valid)
 
                     new_time = time.time()
                     print('Epoch', epoch_idx, 'ended after', int(new_time - last_time), 'seconds', flush=True)
@@ -199,12 +224,11 @@ class UnetTrainer(object):
                     print('Epoch training:', epoch_train_stats)
                     print('Epoch validation:', epoch_valid_stats)
                     print()
-                    logs(summary_writer, epoch_train_stats, ['loss', 'acc'], epoch_idx)
-                    logs(valid_summary_writer, epoch_valid_stats, ['loss', 'acc'], epoch_idx)
+                    logs(summary_writer, epoch_train_stats, ['loss', 'acc'], epoch_idx + 1)
+                    logs(valid_summary_writer, epoch_valid_stats, ['loss', 'acc'], epoch_idx + 1)
 
-                    if epoch_idx % 10 == 0:
-                        if save_path is not None:
-                            self.store(log_dir_base + 'model/epoch_{}.ckpt'.format(epoch_idx))
+                    if save_path is not None:
+                        self.store(log_dir_base + 'model/epoch_{}.ckpt'.format(epoch_idx))
 
             except KeyboardInterrupt:
                 print('Stopping training!')
