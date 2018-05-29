@@ -7,6 +7,7 @@ import time
 import config
 from config import NET_INPUT_SIZE
 from data import full_pipeline
+from palette import PALETTE
 
 
 def get_time():
@@ -172,19 +173,39 @@ class UnetTrainer(object):
         # shape: (4, 2, x, x)
         input = input_unbatched[:, 0]
         # shape: (4, x, x)
-        concat_images = tf.concat([
-            tf.cast(input * 255, tf.int64),
-            labels,
-            self.valid_predictions
-        ], axis=-1)
-        # shape: (4, x, 3*x)
-        print('Concat images shape:', concat_images.get_shape())
-        shape = tf.shape(concat_images)
-        concat_images = tf.reshape(concat_images, (shape[0], shape[1], shape[2], 1))
-        print('Concat images shape 4D:', concat_images.get_shape())
-        self.images_summ = tf.summary.image('img', tf.cast(concat_images, tf.uint8), max_outputs=4)
+
+        self.images_summ = self.output_image_summaries(input, labels, self.valid_predictions)
 
         print('list of variables', list(map(lambda x: x.name, tf.global_variables())), flush=True)
+
+    def output_image_summaries(self, input, ground_truth, output):
+        # All arguments are tensors of shape: (4, x, x)
+        input_rgb = tf.cast(tf.stack([input] * 3, axis=-1), tf.int64)
+        # shape: (4, x, x, 3)
+
+        concat_labels = tf.concat([
+            ground_truth,
+            output
+        ], axis=-1)
+        # shape: (4, x, 2*x)
+
+        # Apply palette
+        params = np.asarray(PALETTE, dtype='uint8')
+        shape = tf.shape(concat_labels)  # (4, x, 2*x)
+        rgb_labels = tf.gather_nd(
+            params=params,
+            indices=np.reshape(concat_labels, (-1, shape[1], shape[2], 1)
+        )
+        # (4, x, 2*x, 3)
+
+        concat_all = tf.concat([
+            input_rgb,
+            rgb_labels
+        ], axis=-2)
+        # shape: (4, x, 3*x, 3)
+
+        print('Concat images shape:', concat_all.get_shape())
+        return tf.summary.image('img', concat_all, max_outputs=config.BATCH_SIZE)
 
     def store_parameters(self, filename):
         params = [
