@@ -180,7 +180,7 @@ class UnetTrainer(object):
 
     def output_image_summaries(self, input, ground_truth, output):
         # All arguments are tensors of shape: (4, x, x)
-        input_rgb = tf.cast(tf.stack([input] * 3, axis=-1), tf.int64)
+        input_rgb = tf.cast(tf.stack([input] * 3, axis=-1), tf.uint8)
         # shape: (4, x, x, 3)
 
         concat_labels = tf.concat([
@@ -194,7 +194,7 @@ class UnetTrainer(object):
         shape = tf.shape(concat_labels)  # (4, x, 2*x)
         rgb_labels = tf.gather_nd(
             params=params,
-            indices=np.reshape(concat_labels, (-1, shape[1], shape[2], 1)
+            indices=tf.reshape(concat_labels, (-1, shape[1], shape[2], 1))
         )
         # (4, x, 2*x, 3)
 
@@ -254,11 +254,12 @@ class UnetTrainer(object):
                         batch_xs, batch_ys = self.sess.run(valid_batch_getter)
                         vloss, images_summ_ = self.validate_on_batch(batch_xs, batch_ys)
                         valid_losses.append(vloss)
+                        valid_summary_writer.add_summary(images_summ_, epoch_idx + batch_idx / batches_per_epoch_valid)
+                        valid_summary_writer.flush()
                         if batch_idx % 50 == 0:
                             print('    [VALID] Batch {}/{}: {}'.format(batch_idx, batches_per_epoch_valid, np.mean(valid_losses, axis=0)), flush=True)
                             logs(valid_summary_writer, np.mean(valid_losses, axis=0), ['loss', 'acc'], epoch_idx + batch_idx / batches_per_epoch_valid)
-                            valid_summary_writer.add_summary(images_summ_, epoch_idx + batch_idx / batches_per_epoch_valid)
-                            valid_summary_writer.flush()
+
 
                     new_time = time.time()
                     print('Epoch', epoch_idx, 'ended after', int(new_time - last_time), 'seconds', flush=True)
