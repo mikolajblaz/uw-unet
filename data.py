@@ -77,8 +77,6 @@ def train_valid_split(seq, train_ratio=config.TRAIN_RATIO):
 
 def full_pipeline(img_lbl_dir=config.ASSIGNMENT_ROOT_DIR + 'training/'):
     img_lbls = img_lbl_filenames(img_lbl_dir)
-    # TODO: remove
-    img_lbls = img_lbls[:100]
     img_lbls_train, img_lbls_valid = train_valid_split(img_lbls)
 
     # img_lbls_train = list(range(10))

@@ -296,8 +296,25 @@ class UnetTrainer(object):
         saver.restore(self.sess, path)
         print("Model restored.")
 
-    # def visualize_predictions(self, model_path):
-    #     with tf.Session() as self.sess:
-    #         self.restore(model_path)
-    #
-    #         summary_writer = tf.summary.FileWriter('vis/', self.sess.graph)
+    def visualize_predictions(self, model_path='./best_model/epoch_7.ckpt'):
+        self.create_model()
+        print('Model OK')
+
+        _, valid_dataset, _, batches_per_epoch_valid = full_pipeline()
+        valid_batch_getter = valid_dataset.make_one_shot_iterator().get_next()
+
+
+        with tf.Session() as self.sess:
+            self.restore(model_path)
+
+            valid_summary_writer = tf.summary.FileWriter('vis/', self.sess.graph)
+
+            valid_losses = []
+            for batch_idx in range(batches_per_epoch_valid):
+                batch_xs, batch_ys = self.sess.run(valid_batch_getter)
+                vloss, images_summ_ = self.validate_on_batch(batch_xs, batch_ys)
+                valid_losses.append(vloss)
+                valid_summary_writer.add_summary(images_summ_, batch_idx)
+                valid_summary_writer.flush()
+                print('    [VALID] Batch {}/{}: {}'.format(batch_idx, batches_per_epoch_valid, np.mean(valid_losses, axis=0)), flush=True)
+                logs(valid_summary_writer, np.mean(valid_losses, axis=0), ['loss', 'acc'], batch_idx)
