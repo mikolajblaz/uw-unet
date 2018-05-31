@@ -79,9 +79,6 @@ def full_pipeline(img_lbl_dir=config.ASSIGNMENT_ROOT_DIR + 'training/'):
     img_lbls = img_lbl_filenames(img_lbl_dir)
     img_lbls_train, img_lbls_valid = train_valid_split(img_lbls)
 
-    # img_lbls_train = list(range(10))
-    # img_lbls_valid = list(range(10, 30))
-
     batches_per_epoch_train = math.ceil(len(img_lbls_train) / config.BATCH_SIZE * config.AUGMENT_FACTOR)
     batches_per_epoch_valid = math.ceil(len(img_lbls_valid) / config.BATCH_SIZE * config.AUGMENT_FACTOR)
 

@@ -38,8 +38,9 @@ class UnetTrainer(object):
                                 feed_dict={self.x: batch_xs, self.y_target: batch_ys, self.is_training: True})
         return results[1:]
 
-    def validate_on_batch(self, batch_xs, batch_ys):
-        results = self.sess.run([self.valid_loss, self.valid_accuracy, self.images_summ],
+    def validate_on_batch(self, batch_xs, batch_ys, batch_idx):
+        img_summ = tf.summary.image('img' + str(batch_idx), self.images_summ, max_outputs=config.BATCH_SIZE)
+        results = self.sess.run([self.valid_loss, self.valid_accuracy, img_summ],
                                 feed_dict={self.x: batch_xs, self.y_target: batch_ys, self.is_training: False})
         return results[:2], results[2]
 
@@ -205,7 +206,7 @@ class UnetTrainer(object):
         # shape: (4, x, 3*x, 3)
 
         print('Concat images shape:', concat_all.get_shape())
-        return tf.summary.image('img', concat_all, max_outputs=config.BATCH_SIZE)
+        return concat_all
 
     def store_parameters(self, filename):
         params = [
@@ -252,7 +253,7 @@ class UnetTrainer(object):
 
                     for batch_idx in range(batches_per_epoch_valid):
                         batch_xs, batch_ys = self.sess.run(valid_batch_getter)
-                        vloss, images_summ_ = self.validate_on_batch(batch_xs, batch_ys)
+                        vloss, images_summ_ = self.validate_on_batch(batch_xs, batch_ys, batch_idx)
                         valid_losses.append(vloss)
                         valid_summary_writer.add_summary(images_summ_, epoch_idx + batch_idx / batches_per_epoch_valid)
                         valid_summary_writer.flush()
@@ -312,7 +313,7 @@ class UnetTrainer(object):
             valid_losses = []
             for batch_idx in range(batches_per_epoch_valid):
                 batch_xs, batch_ys = self.sess.run(valid_batch_getter)
-                vloss, images_summ_ = self.validate_on_batch(batch_xs, batch_ys)
+                vloss, images_summ_ = self.validate_on_batch(batch_xs, batch_ys, batch_idx)
                 valid_losses.append(vloss)
                 valid_summary_writer.add_summary(images_summ_, batch_idx)
                 valid_summary_writer.flush()
